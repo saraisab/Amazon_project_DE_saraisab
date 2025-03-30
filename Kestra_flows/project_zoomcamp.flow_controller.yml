@@ -1,0 +1,25 @@
+id: flow_controller
+namespace: project_zoomcamp
+description: This flow executes the flows to create the project
+
+tasks:
+  - id: apply_credentials
+    type: io.kestra.plugin.core.flow.Subflow
+    namespace: project_zoomcamp
+    flowId: 01_gcp_kv
+    wait: true
+  
+
+  - id: upload_files_to_gcs
+    type: io.kestra.plugin.core.flow.Subflow
+    namespace: project_zoomcamp
+    flowId: 02_gcp_upload_files
+    wait: true
+
+  - id: etl_to_bq
+    type: io.kestra.plugin.core.flow.Subflow
+    namespace: project_zoomcamp
+    flowId: 04_ETL_gcs_to_bq
+    wait: true
+  
+ 

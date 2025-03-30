@@ -1,0 +1,117 @@
+id: 05_bigquery_querys
+namespace: project_zoomcamp
+description: |
+  Query optimization in bigquery, clustering table and create the view to analize the data
+
+inputs:
+  - id: bigquery_dataset
+    type: STRING
+
+tasks:
+  - id: main_table_bq
+    type: io.kestra.plugin.gcp.bigquery.Query
+    description: main_category table create
+    sql: |
+      CREATE OR REPLACE TABLE `{{kv('GCP_PROJECT_ID')}}.{{inputs.bigquery_dataset}}.main_category` AS
+      SELECT
+        ROW_NUMBER() OVER() AS id,
+        main_category AS main_category_value
+      FROM (
+        SELECT DISTINCT main_category
+        FROM `{{kv('GCP_PROJECT_ID')}}.{{inputs.bigquery_dataset}}.amazon_products_dlt`
+      );
+
+  - id: sub_table_bq
+    type: io.kestra.plugin.gcp.bigquery.Query
+    description: sub_category table create
+    sql: |
+      CREATE OR REPLACE TABLE `{{kv('GCP_PROJECT_ID')}}.{{inputs.bigquery_dataset}}.sub_category` AS
+      SELECT
+        ROW_NUMBER() OVER() AS id,
+        sub_category AS sub_category_value
+      FROM (
+        SELECT DISTINCT sub_category
+        FROM `{{kv('GCP_PROJECT_ID')}}.{{inputs.bigquery_dataset}}.amazon_products_dlt`
+      );
+
+  - id: changes_bq
+    type: io.kestra.plugin.gcp.bigquery.Query
+    description: Change amazon_products_dlt table (adding ID columns)
+    sql: |
+      ALTER TABLE `{{kv('GCP_PROJECT_ID')}}.{{inputs.bigquery_dataset}}.amazon_products_dlt`
+      ADD COLUMN id_main_category INT64,
+      ADD COLUMN id_sub_category INT64;
+
+  - id: update_amazon_bq
+    type: io.kestra.plugin.gcp.bigquery.Query
+    description: Update amazon_products_dlt table with the IDs of main_category and sub_category
+    sql: |
+      UPDATE
+        `{{kv('GCP_PROJECT_ID')}}.{{inputs.bigquery_dataset}}.amazon_products_dlt`
+      SET
+        id_main_category = (
+          SELECT
+            mc.id
+          FROM
+            `{{kv('GCP_PROJECT_ID')}}.{{inputs.bigquery_dataset}}.main_category` AS mc
+          WHERE
+            mc.main_category_value = `{{kv('GCP_PROJECT_ID')}}.{{inputs.bigquery_dataset}}.amazon_products_dlt`.main_category
+        ),
+        id_sub_category = (
+          SELECT
+            sc.id
+          FROM
+            `{{kv('GCP_PROJECT_ID')}}.{{inputs.bigquery_dataset}}.sub_category` AS sc
+          WHERE
+            sc.sub_category_value = `{{kv('GCP_PROJECT_ID')}}.{{inputs.bigquery_dataset}}.amazon_products_dlt`.sub_category
+        )
+      WHERE TRUE; 
+
+  - id: delete_orig_cols_bq
+    type: io.kestra.plugin.gcp.bigquery.Query
+    description: DELETE original columns main_category and sub_category
+    sql: |
+      ALTER TABLE `{{kv('GCP_PROJECT_ID')}}.{{inputs.bigquery_dataset}}.amazon_products_dlt`
+      DROP COLUMN main_category,
+      DROP COLUMN sub_category;
+
+  - id: cluster_table_bq
+    type: io.kestra.plugin.gcp.bigquery.Query
+    description: clustered table creation
+    sql: |
+      CREATE OR REPLACE TABLE `{{kv('GCP_PROJECT_ID')}}.{{inputs.bigquery_dataset}}.amazon_products_clustered` 
+      CLUSTER BY
+        id_main_category,
+        id_sub_category
+      AS
+      SELECT * FROM `{{kv('GCP_PROJECT_ID')}}.{{inputs.bigquery_dataset}}.amazon_products_dlt`;
+
+  - id: view_create_bq
+    type: io.kestra.plugin.gcp.bigquery.Query
+    description: view to analize the price and ratings of the products
+    sql: |
+      
+      CREATE OR REPLACE VIEW `{{kv('GCP_PROJECT_ID')}}.{{inputs.bigquery_dataset}}.amazon_products_view`
+      AS
+      SELECT 
+        amz.name product_name,
+        sub.sub_category_value as sub_category, 
+        main.main_category_value as main_category,
+        amz.ratings,
+        amz.no_of_ratings,
+        amz.actual_price,
+        amz.discount_price
+      FROM `{{kv('GCP_PROJECT_ID')}}.{{inputs.bigquery_dataset}}.amazon_products_clustered` as amz
+      INNER JOIN `{{kv('GCP_PROJECT_ID')}}.{{inputs.bigquery_dataset}}.main_category` main on main.id = amz.id_main_category
+      INNER JOIN `{{kv('GCP_PROJECT_ID')}}.{{inputs.bigquery_dataset}}.sub_category` sub on sub.id = amz.id_sub_category
+      ORDER BY 
+        main.main_category_value ASC, 
+        sub.sub_category_value ASC;
+
+pluginDefaults:
+  - type: io.kestra.plugin.gcp
+    values:
+      serviceAccount: "{{kv('GCP_CREDS')}}"
+      projectId: "{{kv('GCP_PROJECT_ID')}}"
+      location: "{{kv('GCP_LOCATION')}}"
+      bucket: "{{kv('GCP_BUCKET_NAME')}}"

@@ -1,0 +1,65 @@
+id: 02_gcp_upload_files
+namespace: project_zoomcamp
+description: |
+  CSV data from kaggle to the bucket into GCS
+
+tasks:
+  - id: download_kaggle_dataset
+    type: io.kestra.plugin.core.http.Download
+    uri: https://www.kaggle.com/api/v1/datasets/download/lokeshparab/amazon-products-dataset
+
+  - id: unzip_dataset
+    type: io.kestra.plugin.scripts.python.Script
+    beforeCommands:
+      - pip install kestra
+    docker:
+      image: python:slim
+    warningOnStdErr: false
+    script: |
+      import zipfile
+      import os
+      import json
+
+      extract_to = "unzipped_files"
+      os.makedirs(extract_to, exist_ok=True)
+
+      with zipfile.ZipFile("{{ outputs.download_kaggle_dataset.uri }}", 'r') as zip_ref:
+        zip_ref.extractall(extract_to)
+
+      renamed_files = {}
+      for filename in os.listdir(extract_to):
+        old_path = os.path.join(extract_to, filename)
+        new_filename = filename.replace(" ", "_")
+        new_path = os.path.join(extract_to, new_filename)
+
+        if old_path != new_path:
+          os.rename(old_path, new_path)
+
+        renamed_files[new_filename] = new_path
+
+      # Guardar los archivos renombrados en el output
+      print(json.dumps({"files": renamed_files}))
+
+    outputFiles:      
+      - "unzipped_files/*.csv"
+         
+  - id: upload_to_gcs
+    type: io.kestra.plugin.core.flow.ForEach
+    values: "{{ outputs.unzip_dataset.outputFiles | keys }}"
+    tasks:
+      - id: upload
+        type: io.kestra.plugin.gcp.gcs.Upload
+        from: "{{ outputs.unzip_dataset.outputFiles[taskrun.value] }}"
+        to: "gs://{{kv('GCP_BUCKET_NAME')}}/{{ taskrun.value }}"
+
+  - id: purge_files
+    type: io.kestra.plugin.core.storage.PurgeCurrentExecutionFiles
+    description: To avoid cluttering your storage, we will remove the downloaded files
+
+pluginDefaults:
+  - type: io.kestra.plugin.gcp
+    values:
+      serviceAccount: "{{kv('GCP_CREDS')}}"
+      projectId: "{{kv('GCP_PROJECT_ID')}}"
+      location: "{{kv('GCP_LOCATION')}}"
+      bucket: "{{kv('GCP_BUCKET_NAME')}}"

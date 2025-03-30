@@ -1,0 +1,178 @@
+id: 04_ETL_gcs_to_bq
+namespace: project_zoomcamp
+description: |
+  Extract the data from a bucket in GCS
+  Transform and clean the data
+  Load to bigquery the data
+
+tasks:
+  - id: python_pipeline
+    type: io.kestra.plugin.scripts.python.Script
+    docker:
+      image: python:slim
+    env:
+      DESTINATION__BIGQUERY__CREDENTIALS: "{{ kv('GCP_CREDS') }}"
+      GOOGLE_APPLICATION_CREDENTIALS: "{{ kv('GCP_CREDS') }}"
+    beforeCommands:
+      - pip install kestra dlt pandas google-cloud-storage "dlt[bigquery]"
+    warningOnStdErr: false
+    script: |
+      from google.cloud import storage
+      import pandas as pd
+      import os
+      import dlt
+
+      def creating_dataframe(bucket_name, folder_name, client):
+        """
+        Connect to GCS bucket to download the data and get it into a df
+
+        Args:
+          bucket_name: string with bucket name
+          folder_name: string with folder inside the bucket
+          client: GCS client
+        Return: 
+          joined_df: pandas dataframe
+        """
+
+        print('Starting to connect to the bucket....')
+        
+        try:
+          # Use the client object to fetch a bucket
+          bucket = client.get_bucket(bucket_name)
+
+          # List the files inside the bucket
+          blobs = bucket.list_blobs(prefix=folder_name)
+
+          # Empty list to store DataFrames
+          dfs = []
+
+          for blob in blobs:
+              if not blob.name.endswith("/"):  # Evita subcarpetas vacías
+                  print(f"Descargando {blob.name}...")
+
+                  # Downloads a temporary file
+                  file_path = blob.name.split("/")[-1]
+                  blob.download_to_filename(file_path)
+
+                  # Check File Format 
+                  if file_path.endswith(".csv"):
+                      df = pd.read_csv(file_path)
+                  else:
+                      print(f"Not valid type file: {file_path}")
+                      # Handle Unsupported Formats
+                      continue  
+
+                  # Store DataFrame in a List
+                  dfs.append(df)
+                  # Delete the temp file
+                  os.remove(file_path)  
+
+          # Join all the dataframes
+          joined_df = pd.concat(dfs, ignore_index=True) if dfs else None
+
+          print('Dataframe with the data completed succesfully')
+
+        except Exception as e:
+          print(f'Error processing data from the bucket: {e}')
+
+        return joined_df
+
+
+      def cleaning_data(df_amazon):
+        """
+          Clean the data in the dataframe
+
+          Args
+            df_amazon: pandas dataframe
+          
+          Return
+            df_amazon: pandas dataframe
+        """
+
+        print('Starting cleaning data....')
+
+        coin_columns = ['discount_price', 'actual_price']
+        double_cols = ['ratings', 'no_of_ratings', 'discount_price', 'actual_price']
+
+        coin_columns = ['discount_price', 'actual_price']
+        double_cols = ['ratings', 'no_of_ratings', 'discount_price', 'actual_price']
+
+        try:
+
+          # Clean the ratings column first
+          df_amazon['ratings'] = df_amazon['ratings'].astype(str).replace(['Get','FREE','₹68.99', '₹65','₹70', '₹100', '₹99', '₹2.99'], '0.0')
+
+          # Remove the prefix
+          for column in coin_columns:
+            df_amazon[column] = df_amazon[column].astype(str).str.removeprefix('₹')    
+
+          for column in double_cols:
+            # Remove the ,
+            df_amazon[column] = df_amazon[column].astype(str).replace(',', '', regex=True)
+            # checks if the value is a number and drops rows with NaN in the specified column
+            df_amazon[column] = pd.to_numeric(df_amazon[column], errors='coerce')
+            # Fill with the mean if the data is null
+            df_amazon[column] = df_amazon[column].fillna(df_amazon[column].mean())
+            # Change the string numbers to float
+            df_amazon[column] = df_amazon[column].astype(float)
+
+          # Deletes the last column with no sense
+          df_amazon.drop(columns=["Unnamed: 0"], inplace=True)
+        except Exception as e:
+          print(f'Error cleaning data: {e}')
+
+        print('Data clean finished succesfully')
+        return df_amazon
+
+
+      # creates the resource amazon_products_dlt
+      @dlt.resource(name="amazon_products_dlt", write_disposition="replace")
+      def amazon_prods():
+          yield df_amazon.to_dict(orient="records")
+
+
+      # Creates the pipeline to upload the data to bigquery
+      pipeline = dlt.pipeline(
+          pipeline_name="amazon_products",
+          destination="bigquery",
+          dataset_name="project_dataset",
+          dev_mode=True,
+      )
+      
+
+      # Bucket data and directory in GCS
+      bucket_name = "{{kv('GCP_BUCKET_NAME')}}"
+      folder_name = "unzipped_files/" 
+
+      # Create GCS client with the credentials json
+
+      creds_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+      print(f'creds son: {creds_json}')
+      client = storage.Client.from_service_account_info(eval(creds_json))
+
+      # client = storage.Client()
+
+      # Download the data and create the df with raw data
+      df = creating_dataframe(bucket_name, folder_name, client)
+
+      # Clean the data
+      df_amazon = cleaning_data(df)
+
+      try:
+        # executes the pipeline
+        info = pipeline.run(amazon_prods)
+        print(info)
+      except Exception as e:
+        print(f'Error uploading the data to bigquery: {e}')
+
+  - id: purge_files
+    type: io.kestra.plugin.core.storage.PurgeCurrentExecutionFiles
+    description: To avoid cluttering your storage, we will remove the downloaded files
+
+pluginDefaults:
+  - type: io.kestra.plugin.gcp
+    values:
+      serviceAccount: "{{kv('GCP_CREDS')}}"
+      projectId: "{{kv('GCP_PROJECT_ID')}}"
+      location: "{{kv('GCP_LOCATION')}}"
+      bucket: "{{kv('GCP_BUCKET_NAME')}}"
