@@ -82,7 +82,7 @@ To run this project you need to have installed these tools: Kestra, Terraform, D
         * Data ingestion: Download the datasets from kaggle, insert the raw csv files into the bucket previously created.  
         * ETL: Download the data from the datalake to clean and transform the data employing the pandas library from python. Besides, upload the data to BigQuery making use of the DLT resources in python.
 * Finally:
-    * Run the flow *project_zoomcamp.05_bigquery_querys.yml*. It needs the name of your dataset created by DLT as an input. It is going to be creating the data models. With this, new tables and views in BigQuery are going to be created, inserted and updated, which are necessary for the final dashboard.
+    * Run the flow *project_zoomcamp.05_bigquery_querys.yml*. It needs the name of your dataset created by DLT as an input. It is going to be creating the data models. With this, new tables and views in BigQuery are going to be created, inserted and updated, which are necessary for the final dashboard. I have divided the data from one table into three to reduce data redundancy and make easier the data management. I have clustered the main table (amazon_products) in order to improve query performance, to reduce the number of scanned bytes for queries and for cost optimization. 
 
     ![Data_models](https://github.com/saraisab/Amazon_project_DE_saraisab/blob/main/images/sql_models.jpeg)
 
