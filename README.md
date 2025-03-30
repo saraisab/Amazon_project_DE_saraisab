@@ -79,7 +79,30 @@ To run this project you need to have installed these tools: Kestra, Terraform, D
 * Thirdly:
     * Run the flow_controller.yml. This is going to:
         * Set the configuration file that manages Google Cloud Platform (GCP) key-value pairs. It is for manage the enviroment variables in Kestra.
-        * Data ingestion: Download the dataset from kaggle, insert it into the bucket previously created.  
-        * ETL: Download the data from the datalake to clean and transform the data employing the pandas library in python. Besides, upload the data to BigQuery making use the DLT resources in python.
+        * Data ingestion: Download the datasets from kaggle, insert the raw csv files into the bucket previously created.  
+        * ETL: Download the data from the datalake to clean and transform the data employing the pandas library from python. Besides, upload the data to BigQuery making use of the DLT resources in python.
 * Finally:
-    * Run the flow *project_zoomcamp.05_bigquery_querys.yml*. It needs the name of your dataset created by DBT as an input. It is going to be creating data models. With this, new tables and views in BigQuery are going to be created, inserted and updated, which are necessary for the final dashboard.
+    * Run the flow *project_zoomcamp.05_bigquery_querys.yml*. It needs the name of your dataset created by DLT as an input. It is going to be creating the data models. With this, new tables and views in BigQuery are going to be created, inserted and updated, which are necessary for the final dashboard.
+
+## Tests
+* In kestra you can check the logs, if there exist any error, it will help you. Besides, in the flow_controller there are several "prints" to give information about the process running, you can check it in the logs.
+
+* To test the data validation in BigQuery you can run these querys:
+    * It'll tell you if there exist any null in the clustered table:
+        ```sql
+        SELECT 
+            SUM(CASE WHEN no_of_ratings IS NULL THEN 1 ELSE 0 END) AS no_of_ratings_null,
+            SUM(CASE WHEN ratings IS NULL THEN 1 ELSE 0 END) AS ratings_null,
+            SUM(CASE WHEN discount_price IS NULL THEN 1 ELSE 0 END) AS discount_price_null,
+            SUM(CASE WHEN actual_price IS NULL THEN 1 ELSE 0 END) AS actual_price_null
+        FROM 
+            `project_name.dataset_name.amazon_products_clustered`;
+        ```
+
+    * Query to guess the total number of the rows, *in my case it's 1.103.170*:
+        ```sql
+        SELECT 
+            COUNT(*) AS Total_rows
+        FROM 
+            `project_name.dataset_name.amazon_products_clustered`;
+        ```
