@@ -84,6 +84,8 @@ To run this project you need to have installed these tools: Kestra, Terraform, D
 * Finally:
     * Run the flow *project_zoomcamp.05_bigquery_querys.yml*. It needs the name of your dataset created by DLT as an input. It is going to be creating the data models. With this, new tables and views in BigQuery are going to be created, inserted and updated, which are necessary for the final dashboard.
 
+    ![Data_models](https://github.com/saraisab/Amazon_project_DE_saraisab/blob/main/images/sql_models.jpeg)
+
 ## Tests
 * In kestra you can check the logs, if there exist any error, it will help you. Besides, in the flow_controller there are several "prints" to give information about the process running, you can check it in the logs.
 
