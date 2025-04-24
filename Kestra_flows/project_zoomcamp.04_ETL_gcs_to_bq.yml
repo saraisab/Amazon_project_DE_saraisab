@@ -147,7 +147,7 @@ tasks:
       # Create GCS client with the credentials json
 
       creds_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-      print(f'creds son: {creds_json}')
+      
       client = storage.Client.from_service_account_info(eval(creds_json))
 
       # client = storage.Client()
